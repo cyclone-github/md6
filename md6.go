@@ -3,6 +3,7 @@ package md6
 import (
 	"encoding/binary"
 	"hash"
+	"sync"
 )
 
 /*
@@ -21,6 +22,7 @@ v0.4.13; 2026-04-13
 	supports all digest sizes (1-512 bits), keyed hashing, tree & sequential modes
 	validated bit-identical output against C MD6 source code
 	code testing and comments by Cursor / Opus 4.6 High
+	optimize compression loop, one-shot Sum, Reset and Sum fast path for less allocs and GC pressure
 */
 
 // output sizes in bytes for standard digest widths
@@ -157,18 +159,37 @@ func newDigest(d int, key []byte, L, r int) *digest {
 }
 
 // hash.Hash interface
+
 // resets the hash to its initial state
+// only zeroes B for levels that were used rather than the full 15KB struct
 func (st *digest) Reset() {
+	top := st.top
 	d := st.initD
 	K := st.initK
 	kl := st.initKeylen
 	L := st.initL
 	r := st.initR
 
-	*st = digest{
-		d: d, keylen: kl, L: L, r: r, K: K, top: 1,
-		initD: d, initK: K, initKeylen: kl, initL: L, initR: r,
+	for ell := 1; ell <= top; ell++ {
+		st.B[ell] = [blockBytes]byte{}
 	}
+
+	st.d = d
+	st.keylen = kl
+	st.L = L
+	st.r = r
+	st.K = K
+	st.top = 1
+	st.bitsProcessed = 0
+	st.finalized = false
+	st.bits = [maxStackHeight]uint32{}
+	st.iLvl = [maxStackHeight]uint64{}
+	st.initD = d
+	st.initK = K
+	st.initKeylen = kl
+	st.initL = L
+	st.initR = r
+
 	if L == 0 {
 		st.bits[1] = uint32(chunkWords * wordBits)
 	}
@@ -209,15 +230,63 @@ func (st *digest) Write(p []byte) (int, error) {
 	return total, nil
 }
 
-// appends the current hash to b and returns the resulting slice
+// appends the current hash to in and returns the resulting slice
+// does not change the underlying hash state
 func (st *digest) Sum(in []byte) []byte {
-	// work on a copy so the caller can continue writing
+	if st.finalized {
+		return append(in, st.hashval[:st.Size()]...)
+	}
+
+	// fast path for single-level messages: compute hash without copying
+	// the full 15KB struct — only save/restore the 512-byte B[1] buffer
+	if st.top == 1 {
+		return st.sumSingleLevel(in)
+	}
+
+	// multi-level tree: full struct copy required
 	d0 := *st
 	d0.final()
 	return append(in, d0.hashval[:d0.Size()]...)
 }
 
+// computes the hash for a single-level message without copying the full struct
+func (st *digest) sumSingleLevel(in []byte) []byte {
+	var B [blockWords]uint64
+	for i := 0; i < blockWords; i++ {
+		B[i] = binary.BigEndian.Uint64(st.B[1][i*8:])
+	}
+
+	p := blockWords*wordBits - int(st.bits[1])
+	var C [chunkWords]uint64
+	standardCompress(C[:], &st.K, 1, st.iLvl[1], st.r, st.L, 1, p, st.keylen, st.d, B[:])
+
+	var hashval [chunkBytes]byte
+	for i := 0; i < chunkWords; i++ {
+		binary.BigEndian.PutUint64(hashval[i*8:], C[i])
+	}
+
+	fullBytes := (st.d + 7) / 8
+	partialBits := st.d % 8
+	src := chunkBytes - fullBytes
+
+	if partialBits == 0 {
+		return append(in, hashval[src:src+fullBytes]...)
+	}
+
+	out := make([]byte, fullBytes)
+	copy(out, hashval[src:src+fullBytes])
+	shift := uint(8 - partialBits)
+	for i := 0; i < fullBytes; i++ {
+		out[i] <<= shift
+		if src+i+1 < chunkBytes {
+			out[i] |= hashval[src+i+1] >> uint(partialBits)
+		}
+	}
+	return append(in, out...)
+}
+
 // mode of operation
+
 // compresses the block at level ell and propagates upward
 // if final is true, this is the finalization pass and partial blocks are compressed with padding
 func (st *digest) process(ell int, final bool) {
@@ -354,32 +423,61 @@ func (st *digest) trimHashval() {
 }
 
 // one-shot functions
+
+// pooled digest for one-shot helpers — avoids 15KB heap allocation per hash
+// after finalization, B is zeroed by compressBlock, so reuse is safe
+var digestPool = sync.Pool{
+	New: func() any { return new(digest) },
+}
+
+// resets a pooled digest for one-shot use (no key)
+// only zeros the small arrays (~412 bytes) instead of the full ~15KB struct
+func (h *digest) resetPooled(d, r int) {
+	h.d = d
+	h.keylen = 0
+	h.L = defaultL
+	h.r = r
+	h.K = [keyWords]uint64{}
+	h.top = 1
+	h.bitsProcessed = 0
+	h.finalized = false
+	h.bits = [maxStackHeight]uint32{}
+	h.iLvl = [maxStackHeight]uint64{}
+}
+
 // returns the md6-256 hash of data
 func Sum256(data []byte) [Size256]byte {
 	var out [Size256]byte
-	h := newDigest(256, nil, defaultL, 0)
+	h := digestPool.Get().(*digest)
+	h.resetPooled(256, defaultRounds(256, 0))
 	h.Write(data)
 	h.final()
 	copy(out[:], h.hashval[:Size256])
+	digestPool.Put(h)
 	return out
 }
 
 // returns the md6-512 hash of data
 func Sum512(data []byte) [Size512]byte {
 	var out [Size512]byte
-	h := newDigest(512, nil, defaultL, 0)
+	h := digestPool.Get().(*digest)
+	h.resetPooled(512, defaultRounds(512, 0))
 	h.Write(data)
 	h.final()
 	copy(out[:], h.hashval[:Size512])
+	digestPool.Put(h)
 	return out
 }
 
 // returns the md6 hash of data with the given digest size in bits
 func Sum(bits int, data []byte) []byte {
-	h := newDigest(bits, nil, defaultL, 0)
+	h := digestPool.Get().(*digest)
+	h.resetPooled(bits, defaultRounds(bits, 0))
 	h.Write(data)
 	h.final()
-	out := make([]byte, h.Size())
-	copy(out, h.hashval[:h.Size()])
+	size := (bits + 7) / 8
+	out := make([]byte, size)
+	copy(out, h.hashval[:size])
+	digestPool.Put(h)
 	return out
 }

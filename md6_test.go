@@ -360,20 +360,20 @@ func benchmarkSize(b *testing.B, size int, msgLen int) {
 	}
 }
 
-func BenchmarkMD6_256_8(b *testing.B)    { benchmarkSize(b, 256, 8) }
-func BenchmarkMD6_256_64(b *testing.B)   { benchmarkSize(b, 256, 64) }
-func BenchmarkMD6_256_512(b *testing.B)  { benchmarkSize(b, 256, 512) }
-func BenchmarkMD6_256_1K(b *testing.B)   { benchmarkSize(b, 256, 1024) }
-func BenchmarkMD6_256_8K(b *testing.B)   { benchmarkSize(b, 256, 8192) }
-func BenchmarkMD6_256_1M(b *testing.B)   { benchmarkSize(b, 256, 1<<20) }
-func BenchmarkMD6_512_8(b *testing.B)    { benchmarkSize(b, 512, 8) }
-func BenchmarkMD6_512_64(b *testing.B)   { benchmarkSize(b, 512, 64) }
-func BenchmarkMD6_512_512(b *testing.B)  { benchmarkSize(b, 512, 512) }
-func BenchmarkMD6_512_1K(b *testing.B)   { benchmarkSize(b, 512, 1024) }
-func BenchmarkMD6_512_8K(b *testing.B)   { benchmarkSize(b, 512, 8192) }
-func BenchmarkMD6_512_1M(b *testing.B)   { benchmarkSize(b, 512, 1<<20) }
-func BenchmarkMD6_128_512(b *testing.B)  { benchmarkSize(b, 128, 512) }
-func BenchmarkMD6_128_8K(b *testing.B)   { benchmarkSize(b, 128, 8192) }
+func BenchmarkMD6_256_8(b *testing.B)   { benchmarkSize(b, 256, 8) }
+func BenchmarkMD6_256_64(b *testing.B)  { benchmarkSize(b, 256, 64) }
+func BenchmarkMD6_256_512(b *testing.B) { benchmarkSize(b, 256, 512) }
+func BenchmarkMD6_256_1K(b *testing.B)  { benchmarkSize(b, 256, 1024) }
+func BenchmarkMD6_256_8K(b *testing.B)  { benchmarkSize(b, 256, 8192) }
+func BenchmarkMD6_256_1M(b *testing.B)  { benchmarkSize(b, 256, 1<<20) }
+func BenchmarkMD6_512_8(b *testing.B)   { benchmarkSize(b, 512, 8) }
+func BenchmarkMD6_512_64(b *testing.B)  { benchmarkSize(b, 512, 64) }
+func BenchmarkMD6_512_512(b *testing.B) { benchmarkSize(b, 512, 512) }
+func BenchmarkMD6_512_1K(b *testing.B)  { benchmarkSize(b, 512, 1024) }
+func BenchmarkMD6_512_8K(b *testing.B)  { benchmarkSize(b, 512, 8192) }
+func BenchmarkMD6_512_1M(b *testing.B)  { benchmarkSize(b, 512, 1<<20) }
+func BenchmarkMD6_128_512(b *testing.B) { benchmarkSize(b, 128, 512) }
+func BenchmarkMD6_128_8K(b *testing.B)  { benchmarkSize(b, 128, 8192) }
 
 func BenchmarkSum256(b *testing.B) {
 	data := make([]byte, 512)
@@ -381,5 +381,47 @@ func BenchmarkSum256(b *testing.B) {
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		Sum256(data)
+	}
+}
+
+// simulates hashgen pattern: one-shot md6-512 on short passwords
+func BenchmarkSum512_Short(b *testing.B) {
+	data := []byte("password123")
+	b.SetBytes(int64(len(data)))
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		Sum512(data)
+	}
+}
+
+// simulates hashgen pattern: one-shot md6-256 on short passwords
+func BenchmarkSum256_Short(b *testing.B) {
+	data := []byte("password123")
+	b.SetBytes(int64(len(data)))
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		Sum256(data)
+	}
+}
+
+// simulates streaming with reuse via Reset
+func BenchmarkMD6_512_Reuse(b *testing.B) {
+	data := []byte("password123")
+	h := New512()
+	b.SetBytes(int64(len(data)))
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		h.Reset()
+		h.Write(data)
+		h.Sum(nil)
+	}
+}
+
+func BenchmarkSum_Generic_512(b *testing.B) {
+	data := []byte("password123")
+	b.SetBytes(int64(len(data)))
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		Sum(512, data)
 	}
 }

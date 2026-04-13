@@ -65,15 +65,6 @@ var qConst = [qWords]uint64{
 	0x0d6f3522631effcb,
 }
 
-// per-step shift amounts (right-shift, left-shift) for w=64
-// 16 steps per round, matching the C reference's unrolled loop body macros
-var shifts = [chunkWords][2]uint{
-	{10, 11}, {5, 24}, {13, 9}, {10, 16},
-	{11, 15}, {12, 9}, {2, 27}, {7, 15},
-	{14, 6}, {15, 2}, {7, 29}, {13, 8},
-	{11, 15}, {7, 5}, {6, 31}, {12, 9},
-}
-
 // returns the default number of rounds for the given digest bit-length d and key byte-length keylen
 // formula: r = 40 + floor(d/4); if keylen > 0 then r = max(80, r)
 func defaultRounds(d, keylen int) int {
@@ -85,14 +76,6 @@ func defaultRounds(d, keylen int) int {
 }
 
 // packs (r, L, z, p, keylen, d) into a 64-bit control word V
-//
-//	bits 63–60: reserved (0)
-//	bits 59–48: r  (12 bits)
-//	bits 47–40: L  (8 bits)
-//	bits 39–36: z  (4 bits)
-//	bits 35–20: p  (16 bits)
-//	bits 19–12: keylen (8 bits)
-//	bits 11–0:  d  (12 bits)
 func makeControlWord(r, L, z, p, keylen, d int) uint64 {
 	return (uint64(r) << 48) |
 		(uint64(L) << 40) |
@@ -103,53 +86,108 @@ func makeControlWord(r, L, z, p, keylen, d int) uint64 {
 }
 
 // packs (ell, i) into a 64-bit unique node identifier U
-//
-//	bits 63–56: ell (level number, 8 bits)
-//	bits 55–0:  i   (index within level)
 func makeNodeID(ell int, i uint64) uint64 {
 	return (uint64(ell) << 56) | i
 }
 
 // assembles the n-word compression input block N from its components
-//
-//	N[0..14]  = Q   (constant vector)
-//	N[15..22] = K   (key / salt)
-//	N[23]     = U   (node ID)
-//	N[24]     = V   (control word)
-//	N[25..88] = B   (data payload)
 func pack(N []uint64, K *[keyWords]uint64, ell int, i uint64, r, L, z, p, keylen, d int, B []uint64) {
-	ni := 0
-	for j := 0; j < qWords; j++ {
-		N[ni] = qConst[j]
-		ni++
-	}
-	for j := 0; j < keyWords; j++ {
-		N[ni] = K[j]
-		ni++
-	}
-	N[ni] = makeNodeID(ell, i)
-	ni += uWords
-	N[ni] = makeControlWord(r, L, z, p, keylen, d)
-	ni += vWords
-	copy(N[ni:ni+blockWords], B[:blockWords])
+	copy(N[:qWords], qConst[:])
+	copy(N[qWords:qWords+keyWords], K[:])
+	N[qWords+keyWords] = makeNodeID(ell, i)
+	N[qWords+keyWords+uWords] = makeControlWord(r, L, z, p, keylen, d)
+	copy(N[qWords+keyWords+uWords+vWords:], B[:blockWords])
 }
 
-// core NLFSR compression loop, fills A[n .. r*c+n-1] from A[0..n-1]
+// core NLFSR compression loop with unrolled 16-step round body
+// each round's 16 steps use hardcoded shift constants matching the C reference
 func mainCompressionLoop(A []uint64, r int) {
 	S := s0
-	idx := numWords
-	for j := 0; j < r*chunkWords; j += chunkWords {
-		for step := 0; step < chunkWords; step++ {
-			x := S
-			x ^= A[idx+step-t5]
-			x ^= A[idx+step-t0]
-			x ^= A[idx+step-t1] & A[idx+step-t2]
-			x ^= A[idx+step-t3] & A[idx+step-t4]
-			x ^= x >> shifts[step][0]
-			A[idx+step] = x ^ (x << shifts[step][1])
-		}
-		S = (S << 1) ^ (S >> (wordBits - 1)) ^ (S & smask)
-		idx += chunkWords
+	size := r*chunkWords + numWords
+	_ = A[size-1]
+
+	for i := numWords; i < size; i += 16 {
+		// step 0: rs=10, ls=11
+		x := S ^ A[i-89] ^ A[i-17] ^ (A[i-18] & A[i-21]) ^ (A[i-31] & A[i-67])
+		x ^= x >> 10
+		A[i] = x ^ (x << 11)
+
+		// step 1: rs=5, ls=24
+		x = S ^ A[i-88] ^ A[i-16] ^ (A[i-17] & A[i-20]) ^ (A[i-30] & A[i-66])
+		x ^= x >> 5
+		A[i+1] = x ^ (x << 24)
+
+		// step 2: rs=13, ls=9
+		x = S ^ A[i-87] ^ A[i-15] ^ (A[i-16] & A[i-19]) ^ (A[i-29] & A[i-65])
+		x ^= x >> 13
+		A[i+2] = x ^ (x << 9)
+
+		// step 3: rs=10, ls=16
+		x = S ^ A[i-86] ^ A[i-14] ^ (A[i-15] & A[i-18]) ^ (A[i-28] & A[i-64])
+		x ^= x >> 10
+		A[i+3] = x ^ (x << 16)
+
+		// step 4: rs=11, ls=15
+		x = S ^ A[i-85] ^ A[i-13] ^ (A[i-14] & A[i-17]) ^ (A[i-27] & A[i-63])
+		x ^= x >> 11
+		A[i+4] = x ^ (x << 15)
+
+		// step 5: rs=12, ls=9
+		x = S ^ A[i-84] ^ A[i-12] ^ (A[i-13] & A[i-16]) ^ (A[i-26] & A[i-62])
+		x ^= x >> 12
+		A[i+5] = x ^ (x << 9)
+
+		// step 6: rs=2, ls=27
+		x = S ^ A[i-83] ^ A[i-11] ^ (A[i-12] & A[i-15]) ^ (A[i-25] & A[i-61])
+		x ^= x >> 2
+		A[i+6] = x ^ (x << 27)
+
+		// step 7: rs=7, ls=15
+		x = S ^ A[i-82] ^ A[i-10] ^ (A[i-11] & A[i-14]) ^ (A[i-24] & A[i-60])
+		x ^= x >> 7
+		A[i+7] = x ^ (x << 15)
+
+		// step 8: rs=14, ls=6
+		x = S ^ A[i-81] ^ A[i-9] ^ (A[i-10] & A[i-13]) ^ (A[i-23] & A[i-59])
+		x ^= x >> 14
+		A[i+8] = x ^ (x << 6)
+
+		// step 9: rs=15, ls=2
+		x = S ^ A[i-80] ^ A[i-8] ^ (A[i-9] & A[i-12]) ^ (A[i-22] & A[i-58])
+		x ^= x >> 15
+		A[i+9] = x ^ (x << 2)
+
+		// step 10: rs=7, ls=29
+		x = S ^ A[i-79] ^ A[i-7] ^ (A[i-8] & A[i-11]) ^ (A[i-21] & A[i-57])
+		x ^= x >> 7
+		A[i+10] = x ^ (x << 29)
+
+		// step 11: rs=13, ls=8
+		x = S ^ A[i-78] ^ A[i-6] ^ (A[i-7] & A[i-10]) ^ (A[i-20] & A[i-56])
+		x ^= x >> 13
+		A[i+11] = x ^ (x << 8)
+
+		// step 12: rs=11, ls=15
+		x = S ^ A[i-77] ^ A[i-5] ^ (A[i-6] & A[i-9]) ^ (A[i-19] & A[i-55])
+		x ^= x >> 11
+		A[i+12] = x ^ (x << 15)
+
+		// step 13: rs=7, ls=5
+		x = S ^ A[i-76] ^ A[i-4] ^ (A[i-5] & A[i-8]) ^ (A[i-18] & A[i-54])
+		x ^= x >> 7
+		A[i+13] = x ^ (x << 5)
+
+		// step 14: rs=6, ls=31
+		x = S ^ A[i-75] ^ A[i-3] ^ (A[i-4] & A[i-7]) ^ (A[i-17] & A[i-53])
+		x ^= x >> 6
+		A[i+14] = x ^ (x << 31)
+
+		// step 15: rs=12, ls=9
+		x = S ^ A[i-74] ^ A[i-2] ^ (A[i-3] & A[i-6]) ^ (A[i-16] & A[i-52])
+		x ^= x >> 12
+		A[i+15] = x ^ (x << 9)
+
+		S = (S << 1) ^ (S >> 63) ^ (S & smask)
 	}
 }
 
@@ -171,8 +209,6 @@ func compress(C []uint64, N []uint64, r int) {
 	A := (*bp)[:size]
 
 	copy(A, N[:numWords])
-	// positions A[n..] are written sequentially by the loop before being
-	// read, so stale pool data beyond n is harmless and need not be zeroed
 	mainCompressionLoop(A, r)
 	copy(C[:chunkWords], A[size-chunkWords:])
 
