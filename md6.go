@@ -7,11 +7,11 @@ import (
 
 /*
 Pure Go implementation of Ronald L. Rivest's MD6 cryptographic hash function
-https://github.com/cyclone-github/md6-go
+https://github.com/cyclone-github/md6
 written by cyclone
 
 MIT License
-https://github.com/cyclone-github/md6-go/blob/main/LICENSE
+https://github.com/cyclone-github/md6/blob/main/LICENSE
 
 v0.4.13; 2026-04-13
 	initial github release

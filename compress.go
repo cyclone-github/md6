@@ -7,11 +7,11 @@ import "sync"
 
 /*
 Pure Go implementation of Ronald L. Rivest's MD6 cryptographic hash function
-https://github.com/cyclone-github/md6-go
+https://github.com/cyclone-github/md6
 written by cyclone
 
 MIT License
-https://github.com/cyclone-github/md6-go/blob/main/LICENSE
+https://github.com/cyclone-github/md6/blob/main/LICENSE
 */
 
 // md6 word and block geometry (w=64 standard configuration)

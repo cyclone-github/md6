@@ -1,31 +1,33 @@
-[![Readme Card](https://github-readme-stats-fast.vercel.app/api/pin/?username=cyclone-github&repo=md6-go&theme=gruvbox)](https://github.com/cyclone-github/md6-go/)
+[![Readme Card](https://github-readme-stats-fast.vercel.app/api/pin/?username=cyclone-github&repo=md6&theme=gruvbox)](https://github.com/cyclone-github/md6/)
 <!--
-[![Go Report Card](https://goreportcard.com/badge/github.com/cyclone-github/md6-go)](https://goreportcard.com/report/github.com/cyclone-github/md6-go)
+[![Go Report Card](https://goreportcard.com/badge/github.com/cyclone-github/md6)](https://goreportcard.com/report/github.com/cyclone-github/md6)
 -->
-[![GitHub issues](https://img.shields.io/github/issues/cyclone-github/md6-go.svg)](https://github.com/cyclone-github/md6-go/issues)
-[![License](https://img.shields.io/github/license/cyclone-github/md6-go.svg)](LICENSE)
+[![GitHub issues](https://img.shields.io/github/issues/cyclone-github/md6.svg)](https://github.com/cyclone-github/md6/issues)
+[![License](https://img.shields.io/github/license/cyclone-github/md6.svg)](LICENSE)
 <!--
-[![GitHub release](https://img.shields.io/github/release/cyclone-github/md6-go.svg)](https://github.com/cyclone-github/md6-go/releases) [![Go Reference](https://pkg.go.dev/badge/github.com/cyclone-github/md6-go.svg)](https://pkg.go.dev/github.com/cyclone-github/md6-go)
+[![GitHub release](https://img.shields.io/github/release/cyclone-github/md6.svg)](https://github.com/cyclone-github/md6/releases) [![Go Reference](https://pkg.go.dev/badge/github.com/cyclone-github/md6.svg)](https://pkg.go.dev/github.com/cyclone-github/md6)
 -->
 
 ---
 
-# MD6-Go
+# MD6
 
-MD6-Go is a pure Go implementation of the MD6 cryptographic hash function, designed by Ronald L. Rivest and submitted to the NIST SHA-3 competition. This package produces bit-identical output to the original C reference implementation and follows a similar API as Go's standard `crypto/` hash packages such as [crypto/sha256](https://pkg.go.dev/crypto/sha256).
+MD6 is a pure Go implementation of the MD6 cryptographic hash function, designed by Ronald L. Rivest and submitted to the NIST SHA-3 competition. This package produces bit-identical output to the original C reference implementation and follows a similar API as Go's standard `crypto/` hash packages such as [crypto/sha256](https://pkg.go.dev/crypto/sha256).
+
+This code is currently a POC and needs optimized for better performance. 
 
 ## Installation & Import
 
 To install, run:
 
 ```bash
-go get github.com/cyclone-github/md6-go
+go get github.com/cyclone-github/md6
 ```
 
 Then import the package in your project:
 
 ```go
-import md6 "github.com/cyclone-github/md6-go"
+import "github.com/cyclone-github/md6"
 ```
 
 ## Usage
@@ -39,7 +41,7 @@ import (
 	"encoding/hex"
 	"fmt"
 
-	md6 "github.com/cyclone-github/md6-go"
+	"github.com/cyclone-github/md6"
 )
 
 func main() {
@@ -68,7 +70,7 @@ import (
 	"io"
 	"os"
 
-	md6 "github.com/cyclone-github/md6-go"
+	"github.com/cyclone-github/md6"
 )
 
 func main() {
